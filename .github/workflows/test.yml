@@ -1,0 +1,49 @@
+name: Test
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: Unit (bats)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install bats
+        run: sudo apt-get update && sudo apt-get install -y bats
+      - run: bats __tests__/unit
+
+  integration-clean:
+    name: Integration — clean fixture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run action against clean fixture
+        id: run
+        uses: ./
+        with:
+          working-directory: __tests__/fixtures/clean
+      - name: Assert outputs
+        run: |
+          test "${{ steps.run.outputs.errors }}" = "0"
+          test "${{ steps.run.outputs.warnings }}" = "0"
+
+  integration-errors:
+    name: Integration — errors fixture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run action (must fail)
+        id: run
+        uses: ./
+        continue-on-error: true
+        with:
+          working-directory: __tests__/fixtures/errors
+      - name: Assert non-zero exit and errors >= 1
+        run: |
+          test "${{ steps.run.outcome }}" = "failure"
+          test "${{ steps.run.outputs.errors }}" -ge 1
