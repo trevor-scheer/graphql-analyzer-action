@@ -47,3 +47,58 @@ jobs:
         run: |
           test "${{ steps.run.outcome }}" = "failure"
           test "${{ steps.run.outputs.errors }}" -ge 1
+
+  integration-annotate:
+    name: Integration — annotation output
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Drive scripts/run.sh directly so we can capture stdout. The composite
+      # action sends ::error:: lines to GitHub at runtime; capturing them
+      # in-job from the action's own step is not reliable, so we assert
+      # against the script's stdout instead.
+      - name: Install released CLI for the script run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Pick the latest cli release.
+          tag=$(gh release list --repo trevor-scheer/graphql-analyzer --limit 50 --json tagName \
+                 | jq -r '[.[] | select(.tagName | startswith("graphql-analyzer-cli/v"))] | first | .tagName')
+          gh release download "$tag" \
+            --repo trevor-scheer/graphql-analyzer \
+            --pattern 'graphql-cli-x86_64-unknown-linux-gnu.tar.xz' \
+            --dir "$RUNNER_TEMP"
+          tar -xJf "$RUNNER_TEMP/graphql-cli-x86_64-unknown-linux-gnu.tar.xz" \
+            -C "$RUNNER_TEMP"
+          chmod +x "$RUNNER_TEMP/graphql"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Run scripts/run.sh and capture stdout
+        id: cap
+        env:
+          INPUT_COMMAND: check
+          INPUT_ANNOTATE: 'true'
+          ACTION_PATH: ${{ github.workspace }}
+          GITHUB_OUTPUT: /tmp/run-out
+          GITHUB_STEP_SUMMARY: /tmp/run-summary
+        working-directory: __tests__/fixtures/errors
+        run: |
+          : > /tmp/run-out
+          : > /tmp/run-summary
+          set +e
+          "$GITHUB_WORKSPACE/scripts/run.sh" > /tmp/run-stdout 2>&1
+          ec=$?
+          set -e
+          echo "=== run.sh stdout ==="
+          cat /tmp/run-stdout
+          echo "=== exit=$ec ==="
+          test "$ec" -ne 0
+      - name: Assert workflow command for the fixture's broken query
+        run: |
+          # Path is relative to GITHUB_WORKSPACE (repo root), not the
+          # working-directory, because annotate.sh strips $GITHUB_WORKSPACE/.
+          grep -F '::error file=__tests__/fixtures/errors/src/query.graphql' /tmp/run-stdout
+          grep -F 'doesNotExist' /tmp/run-stdout
+      - name: Assert step-summary file populated
+        run: |
+          grep -q '## GraphQL Analyzer' /tmp/run-summary
+          grep -q '1 errors' /tmp/run-summary
