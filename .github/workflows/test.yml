@@ -106,6 +106,12 @@ jobs:
           # working-directory, because annotate.sh strips $GITHUB_WORKSPACE/.
           grep -F '::error file=__tests__/fixtures/errors/src/query.graphql' /tmp/run-stdout
           grep -F 'doesNotExist' /tmp/run-stdout
+      - name: Diagnostic — dump run-summary contents
+        run: |
+          echo "--- size ---"
+          wc -c /tmp/run-summary || echo "missing"
+          echo "--- contents ---"
+          cat /tmp/run-summary || echo "missing"
       - name: Assert step-summary file populated
         run: |
           grep -q '## GraphQL Analyzer' /tmp/run-summary
