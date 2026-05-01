@@ -72,47 +72,27 @@ jobs:
             -C "$RUNNER_TEMP"
           chmod +x "$RUNNER_TEMP/graphql"
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-      - name: Run scripts/run.sh and capture stdout
-        id: cap
+      - name: Run scripts/run.sh, capture stdout, and assert annotations + step summary
         env:
           INPUT_COMMAND: check
           INPUT_ANNOTATE: 'true'
           ACTION_PATH: ${{ github.workspace }}
-          GITHUB_OUTPUT: /tmp/run-out
-          GITHUB_STEP_SUMMARY: /tmp/run-summary
+          # GITHUB_STEP_SUMMARY is managed per-step by the runner; we let
+          # run.sh write to it and inspect it after.
         working-directory: __tests__/fixtures/errors
         run: |
-          : > /tmp/run-out
-          : > /tmp/run-summary
           set +e
           "$GITHUB_WORKSPACE/scripts/run.sh" > /tmp/run-stdout 2>&1
           ec=$?
           set -e
-          echo "=== run.sh stdout ==="
-          cat /tmp/run-stdout
-          echo "=== exit=$ec ==="
           test "$ec" -ne 0
-      - name: Diagnostic — dump raw bytes
-        run: |
-          echo "--- size ---"
-          wc -c /tmp/run-stdout
-          echo "--- hexdump ---"
-          xxd /tmp/run-stdout | head -20 || od -c /tmp/run-stdout | head -10
-          echo "--- escaped via printf %q ---"
-          while IFS= read -r line; do printf '%q\n' "$line"; done < /tmp/run-stdout
-      - name: Assert workflow command for the fixture's broken query
-        run: |
-          # Path is relative to GITHUB_WORKSPACE (repo root), not the
-          # working-directory, because annotate.sh strips $GITHUB_WORKSPACE/.
+
+          # Annotation assertion: the path is relative to $GITHUB_WORKSPACE
+          # (repo root), not the working-directory, because annotate.sh
+          # strips $GITHUB_WORKSPACE/.
           grep -F '::error file=__tests__/fixtures/errors/src/query.graphql' /tmp/run-stdout
           grep -F 'doesNotExist' /tmp/run-stdout
-      - name: Diagnostic — dump run-summary contents
-        run: |
-          echo "--- size ---"
-          wc -c /tmp/run-summary || echo "missing"
-          echo "--- contents ---"
-          cat /tmp/run-summary || echo "missing"
-      - name: Assert step-summary file populated
-        run: |
-          grep -q '## GraphQL Analyzer' /tmp/run-summary
-          grep -q '1 errors' /tmp/run-summary
+
+          # Step-summary assertion: read from the runner's per-step file.
+          grep -q '## GraphQL Analyzer' "$GITHUB_STEP_SUMMARY"
+          grep -q '1 errors' "$GITHUB_STEP_SUMMARY"

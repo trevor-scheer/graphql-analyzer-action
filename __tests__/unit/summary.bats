@@ -8,7 +8,7 @@ setup() {
   : > "$GITHUB_STEP_SUMMARY"
 }
 
-@test "writes heading and zero counts on a clean result" {
+@test "writes heading and zero counts on a clean result (uses GITHUB_STEP_SUMMARY)" {
   fixture="$BATS_TEST_TMPDIR/in.json"
   echo '{"files": [], "stats": {"total_errors": 0, "total_warnings": 0}, "success": true}' > "$fixture"
   run "$ROOT/scripts/lib/summary.sh" "$fixture"
@@ -16,6 +16,24 @@ setup() {
   grep -q "GraphQL Analyzer" "$GITHUB_STEP_SUMMARY"
   grep -q "0 errors" "$GITHUB_STEP_SUMMARY"
   grep -q "0 warnings" "$GITHUB_STEP_SUMMARY"
+}
+
+@test "writes to OUTPUT_PATH when given as arg (overrides GITHUB_STEP_SUMMARY)" {
+  fixture="$BATS_TEST_TMPDIR/in.json"
+  out="$BATS_TEST_TMPDIR/custom.md"
+  echo '{"files": [], "stats": {"total_errors": 0, "total_warnings": 0}, "success": true}' > "$fixture"
+  unset GITHUB_STEP_SUMMARY
+  run "$ROOT/scripts/lib/summary.sh" "$fixture" "$out"
+  [ "$status" -eq 0 ]
+  grep -q "GraphQL Analyzer" "$out"
+}
+
+@test "errors when neither arg nor GITHUB_STEP_SUMMARY is set" {
+  fixture="$BATS_TEST_TMPDIR/in.json"
+  echo '{"files": [], "stats": {"total_errors": 0, "total_warnings": 0}, "success": true}' > "$fixture"
+  unset GITHUB_STEP_SUMMARY
+  run "$ROOT/scripts/lib/summary.sh" "$fixture"
+  [ "$status" -ne 0 ]
 }
 
 @test "renders the first 10 diagnostics in a table and notes overflow" {
