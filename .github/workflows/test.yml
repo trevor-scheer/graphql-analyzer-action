@@ -92,6 +92,14 @@ jobs:
           cat /tmp/run-stdout
           echo "=== exit=$ec ==="
           test "$ec" -ne 0
+      - name: Diagnostic — dump raw bytes
+        run: |
+          echo "--- size ---"
+          wc -c /tmp/run-stdout
+          echo "--- hexdump ---"
+          xxd /tmp/run-stdout | head -20 || od -c /tmp/run-stdout | head -10
+          echo "--- escaped via printf %q ---"
+          while IFS= read -r line; do printf '%q\n' "$line"; done < /tmp/run-stdout
       - name: Assert workflow command for the fixture's broken query
         run: |
           # Path is relative to GITHUB_WORKSPACE (repo root), not the
