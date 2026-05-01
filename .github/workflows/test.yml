@@ -47,3 +47,52 @@ jobs:
         run: |
           test "${{ steps.run.outcome }}" = "failure"
           test "${{ steps.run.outputs.errors }}" -ge 1
+
+  integration-annotate:
+    name: Integration — annotation output
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Drive scripts/run.sh directly so we can capture stdout. The composite
+      # action sends ::error:: lines to GitHub at runtime; capturing them
+      # in-job from the action's own step is not reliable, so we assert
+      # against the script's stdout instead.
+      - name: Install released CLI for the script run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Pick the latest cli release.
+          tag=$(gh release list --repo trevor-scheer/graphql-analyzer --limit 50 --json tagName \
+                 | jq -r '[.[] | select(.tagName | startswith("graphql-analyzer-cli/v"))] | first | .tagName')
+          gh release download "$tag" \
+            --repo trevor-scheer/graphql-analyzer \
+            --pattern 'graphql-cli-x86_64-unknown-linux-gnu.tar.xz' \
+            --dir "$RUNNER_TEMP"
+          tar -xJf "$RUNNER_TEMP/graphql-cli-x86_64-unknown-linux-gnu.tar.xz" \
+            -C "$RUNNER_TEMP"
+          chmod +x "$RUNNER_TEMP/graphql"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Run scripts/run.sh, capture stdout, and assert annotations + step summary
+        env:
+          INPUT_COMMAND: check
+          INPUT_ANNOTATE: 'true'
+          ACTION_PATH: ${{ github.workspace }}
+          # GITHUB_STEP_SUMMARY is managed per-step by the runner; we let
+          # run.sh write to it and inspect it after.
+        working-directory: __tests__/fixtures/errors
+        run: |
+          set +e
+          "$GITHUB_WORKSPACE/scripts/run.sh" > /tmp/run-stdout 2>&1
+          ec=$?
+          set -e
+          test "$ec" -ne 0
+
+          # Annotation assertion: the path is relative to $GITHUB_WORKSPACE
+          # (repo root), not the working-directory, because annotate.sh
+          # strips $GITHUB_WORKSPACE/.
+          grep -F '::error file=__tests__/fixtures/errors/src/query.graphql' /tmp/run-stdout
+          grep -F 'doesNotExist' /tmp/run-stdout
+
+          # Step-summary assertion: read from the runner's per-step file.
+          grep -q '## GraphQL Analyzer' "$GITHUB_STEP_SUMMARY"
+          grep -q '1 errors' "$GITHUB_STEP_SUMMARY"
