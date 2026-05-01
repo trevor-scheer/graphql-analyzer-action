@@ -1,0 +1,106 @@
+name: GraphQL Analyzer
+description: Validate, lint, and check GraphQL projects with inline PR annotations and SARIF.
+author: trevor-scheer
+branding:
+  icon: check-circle
+  color: purple
+
+inputs:
+  command:
+    description: Command to run (check, validate, lint).
+    required: false
+    default: check
+  config:
+    description: Path to .graphqlrc.yaml.
+    required: false
+    default: ''
+  project:
+    description: Project name for multi-project configs.
+    required: false
+    default: ''
+  version:
+    description: "CLI version: 'latest' or 'X.Y.Z'."
+    required: false
+    default: latest
+  max-warnings:
+    description: Threshold passed to --max-warnings.
+    required: false
+    default: ''
+  annotate:
+    description: Emit inline PR annotations.
+    required: false
+    default: 'true'
+  sarif:
+    description: Produce SARIF output.
+    required: false
+    default: 'false'
+  sarif-file:
+    description: SARIF output path.
+    required: false
+    default: graphql-results.sarif
+  comment:
+    description: Post (or update) a PR summary comment.
+    required: false
+    default: 'false'
+  working-directory:
+    description: Where to run the CLI.
+    required: false
+    default: '.'
+
+outputs:
+  errors:
+    description: Number of error-severity diagnostics.
+    value: ${{ steps.run.outputs.errors }}
+  warnings:
+    description: Number of warning-severity diagnostics.
+    value: ${{ steps.run.outputs.warnings }}
+  sarif-file:
+    description: Path to the SARIF file when sarif is true.
+    value: ${{ steps.run.outputs.sarif-file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve CLI version
+      id: resolve
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        GH_TOKEN: ${{ github.token }}
+      run: ${{ github.action_path }}/scripts/resolve-version.sh
+
+    - name: Cache CLI binary
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/graphql-cli
+        key: graphql-cli-${{ steps.resolve.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
+
+    - name: Install CLI
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        VERSION: ${{ steps.resolve.outputs.version }}
+        GH_TOKEN: ${{ github.token }}
+      run: ${{ github.action_path }}/scripts/install.sh
+
+    - name: Add CLI to PATH
+      shell: bash
+      run: echo "${{ runner.temp }}/graphql-cli" >> "$GITHUB_PATH"
+
+    - name: Run CLI
+      id: run
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        INPUT_COMMAND: ${{ inputs.command }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_PROJECT: ${{ inputs.project }}
+        INPUT_MAX_WARNINGS: ${{ inputs.max-warnings }}
+        INPUT_ANNOTATE: ${{ inputs.annotate }}
+        INPUT_SARIF: ${{ inputs.sarif }}
+        INPUT_SARIF_FILE: ${{ inputs.sarif-file }}
+        INPUT_COMMENT: ${{ inputs.comment }}
+        ACTION_PATH: ${{ github.action_path }}
+        GH_TOKEN: ${{ github.token }}
+      run: ${{ github.action_path }}/scripts/run.sh
