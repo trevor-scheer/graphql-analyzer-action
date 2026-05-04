@@ -1,0 +1,51 @@
+name: Release
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  major-tag:
+    name: Update moving major tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Force-update major tag (e.g. v1) to point at this release
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          major="${tag%%.*}"  # v1.2.3 -> v1
+          if [ "$major" = "$tag" ]; then
+            echo "Tag $tag does not match vMAJOR.MINOR.PATCH; skipping"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git tag -f "$major" "$tag"
+          git push origin "$major" --force
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: major-tag
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create release with auto-generated notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          # Idempotent: if a release already exists (e.g. v0.1.0 was created
+          # manually), this exits non-zero. Treat that as success — we still
+          # got the major tag updated.
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release $tag already exists; skipping"
+            exit 0
+          fi
+          gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$tag" \
+            --generate-notes
