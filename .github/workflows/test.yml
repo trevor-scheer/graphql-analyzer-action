@@ -118,3 +118,42 @@ jobs:
           # The CLI emits %SRCROOT%-relative URIs; verify the broken file
           # surfaces.
           jq -e '.runs[0].results[] | select(.locations[0].physicalLocation.artifactLocation.uri | endswith("query.graphql"))' "$file"
+
+  integration-comment:
+    name: Integration — PR summary comment
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        continue-on-error: true
+        with:
+          working-directory: __tests__/fixtures/errors
+          comment: true
+      - name: Assert comment exists with marker
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr view "${{ github.event.pull_request.number }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json comments \
+            --jq '.comments[].body' \
+            | grep -F '<!-- graphql-analyzer-action -->'
+      - name: Re-run action; comment must be UPDATED, not duplicated
+        uses: ./
+        continue-on-error: true
+        with:
+          working-directory: __tests__/fixtures/errors
+          comment: true
+      - name: Assert exactly one comment with marker
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          count=$(gh pr view "${{ github.event.pull_request.number }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json comments \
+            --jq '[.comments[] | select(.body | contains("<!-- graphql-analyzer-action -->"))] | length')
+          test "$count" -eq 1

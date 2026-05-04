@@ -68,6 +68,15 @@ if [ "${INPUT_SARIF:-false}" = "true" ]; then
   fi
 fi
 
+# PR summary comment: only fires on pull_request events. The script itself
+# guards against non-PR contexts; failures are non-fatal so a missing
+# `pull-requests: write` permission downgrades to a warning rather than
+# masking real CLI exit codes.
+if [ "${INPUT_COMMENT:-false}" = "true" ] && [ -s "$results" ]; then
+  "$action_path/scripts/lib/comment.sh" --post "$results" || \
+    echo "::warning::Failed to post PR comment (continuing)"
+fi
+
 printf 'errors=%s\n' "$errors" >> "${GITHUB_OUTPUT:-/dev/stdout}"
 printf 'warnings=%s\n' "$warnings" >> "${GITHUB_OUTPUT:-/dev/stdout}"
 
