@@ -96,3 +96,64 @@ jobs:
           # Step-summary assertion: read from the runner's per-step file.
           grep -q '## GraphQL Analyzer' "$GITHUB_STEP_SUMMARY"
           grep -q '1 errors' "$GITHUB_STEP_SUMMARY"
+
+  integration-sarif:
+    name: Integration — SARIF output
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        id: run
+        continue-on-error: true
+        with:
+          working-directory: __tests__/fixtures/errors
+          sarif: true
+      - name: SARIF file exists and parses as v2.1.0
+        working-directory: __tests__/fixtures/errors
+        run: |
+          file="${{ steps.run.outputs.sarif-file }}"
+          test -n "$file"
+          test -s "$file"
+          jq -e '.version == "2.1.0" and (.runs | length > 0)' "$file"
+          # The CLI emits %SRCROOT%-relative URIs; verify the broken file
+          # surfaces.
+          jq -e '.runs[0].results[] | select(.locations[0].physicalLocation.artifactLocation.uri | endswith("query.graphql"))' "$file"
+
+  integration-comment:
+    name: Integration — PR summary comment
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        continue-on-error: true
+        with:
+          working-directory: __tests__/fixtures/errors
+          comment: true
+      - name: Assert comment exists with marker
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr view "${{ github.event.pull_request.number }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json comments \
+            --jq '.comments[].body' \
+            | grep -F '<!-- graphql-analyzer-action -->'
+      - name: Re-run action; comment must be UPDATED, not duplicated
+        uses: ./
+        continue-on-error: true
+        with:
+          working-directory: __tests__/fixtures/errors
+          comment: true
+      - name: Assert exactly one comment with marker
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          count=$(gh pr view "${{ github.event.pull_request.number }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json comments \
+            --jq '[.comments[] | select(.body | contains("<!-- graphql-analyzer-action -->"))] | length')
+          test "$count" -eq 1
